@@ -59,9 +59,9 @@ $ mcd-calories
 营养表 158 条 · 别名表 2 条 · 已判定缺口 0 条
   ⚠️ 数据源：营养表存在重复条目：小杯玉米杯、纯牛奶（盒装）
 ==============================================================================
-2026-09-18 12:29      482 kcal  2/2       上海康建商务广场得来速餐厅
-2026-09-07 18:10     2225 kcal  8/8       麦当劳上海古浪路桃浦星品荟餐厅
-2026-09-03 10:14      526 kcal  2/2       麦当劳上海普陀中海环宇城餐厅
+2026-09-18 12:29      482 kcal  2/2       ***得来速餐厅
+2026-09-07 18:10     2225 kcal  8/8       麦当劳***餐厅
+2026-09-03 10:14      526 kcal  2/2       麦当劳***餐厅
 ==============================================================================
 完整覆盖 10/10 单 · 覆盖商品 45/45 项 · 已覆盖部分合计 12290 kcal
 ```
@@ -87,6 +87,48 @@ $ mcd-calories --detail
               【方法B】513 − 24(马芬→面包) − 79(去蛋) − 46(去芝士) + 85(加酱) = 449
         来源：...①本堡是否含芝士——若含，实际值约 496（故区间上界给到 495）...
 ```
+---
+
+## 🚀 快速开始
+
+三步：**安装 → 配置 Token → 运行**。需要 Python ≥ 3.9，**零第三方依赖**。
+
+### 安装方法
+
+有两种，任选：
+
+```bash
+# 方式一：安装为命令行工具（推荐）
+git clone <this-repo>
+cd mcd-order-calories
+python3 -m pip install -e .
+mcd-calories                     # 安装后可直接用
+
+# 方式二：不安装，直接以模块方式运行
+PYTHONPATH=src python3 -m mcd_order_calories.cli
+```
+
+### 配置 Token
+
+在 [M-China/mcd-mcp-server](https://github.com/M-China/mcd-mcp-server) 申请后设置环境变量：
+
+```bash
+export MCD_MCP_TOKEN="你的 Token"
+```
+
+### 使用示例
+
+```bash
+mcd-calories                  # 订单卡路里一览（默认命令，不写子命令也行）
+mcd-calories --detail         # 展开每单的商品明细与估算推导
+mcd-calories --json           # 结构化输出，便于程序消费
+mcd-calories gaps             # 列出未匹配商品，区分「已知缺口」与「新出现」
+mcd-calories explain 双层脆鸡堡  # 解析单个商品名，展示判定理由与全部候选
+mcd-calories doctor           # 检查连通性与所需工具
+```
+
+未安装时把上面的 `mcd-calories` 换成 `PYTHONPATH=src python3 -m mcd_order_calories.cli`。
+
 
 ---
 
@@ -261,51 +303,6 @@ $ mcd-calories explain 可口可乐中杯
 | **Agent 开发者**     | 需要一个「两个数据源只能按名称对齐」的工程参考       | 五级级联匹配 + 假阳性防御 + 覆盖率披露，可作为 MCP 工程范式参考 |
 
 > ⚠️ **重要边界**：本项目给出的是**估算参考**，不是医学或营养诊断依据。营养表未收录的商品按文中标注的方式估算并显式披露区间；覆盖率不足时数值是**下界**。请勿据此做严格的医学决策。
-
----
-
-## 🚀 快速开始
-
-需要 Python ≥ 3.9，**零第三方依赖**。
-
-### 安装方法
-
-有两种，任选：
-
-```bash
-# 方式一：安装为命令行工具（推荐）
-git clone <this-repo>
-cd mcd-order-calories
-python3 -m pip install -e .
-mcd-calories                     # 安装后可直接用
-
-# 方式二：不安装，直接以模块方式运行
-PYTHONPATH=src python3 -m mcd_order_calories.cli
-```
-
-### 配置 Token
-
-在 [M-China/mcd-mcp-server](https://github.com/M-China/mcd-mcp-server) 申请后设置环境变量：
-
-```bash
-export MCD_MCP_TOKEN="你的 Token"
-```
-
-### 使用示例
-
-```bash
-mcd-calories                  # 订单卡路里一览（默认命令，不写子命令也行）
-mcd-calories --detail         # 展开每单的商品明细与估算推导
-mcd-calories --json           # 结构化输出，便于程序消费
-mcd-calories gaps             # 列出未匹配商品，区分「已知缺口」与「新出现」
-mcd-calories explain 双层脆鸡堡  # 解析单个商品名，展示判定理由与全部候选
-mcd-calories doctor           # 检查连通性与所需工具
-```
-
-未安装时把上面的 `mcd-calories` 换成 `PYTHONPATH=src python3 -m mcd_order_calories.cli`。
-
----
-
 ## 🧪 测试
 
 **零依赖运行**——用标准库 `unittest`，clone 下来不用装任何东西就能验证：
