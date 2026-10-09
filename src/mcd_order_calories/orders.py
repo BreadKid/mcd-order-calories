@@ -26,6 +26,91 @@ from .matching import MatchResult, MatchTier, ProductMatcher
 from .normalize import normalize
 
 
+# --------------------------------------------------------------------- #
+# 订单状态分类
+# --------------------------------------------------------------------- #
+
+STATUS_CLASSES: tuple[str, ...] = ("consumed", "pending", "cancelled", "in_progress", "other")
+
+STATUS_LABELS: dict[str, str] = {
+    "consumed": "已消费",
+    "pending": "待支付",
+    "cancelled": "已取消 / 退款",
+    "in_progress": "进行中",
+    "other": "状态未知",
+}
+
+
+class OrderStatusPolicy:
+    """把 ``orderStatus`` 归类，决定哪些订单计入「已消费」热量合计。
+
+    ``order-list`` 会返回**未支付**订单——实测账号里就有 1 条「待支付」。若直接
+    计入合计，会把还没吃到的东西算成已摄入热量。
+
+    因此只有明确代表「已吃到」的状态计入合计，其余一律**单独展示并披露**。
+
+    未在任何列表中的状态归入 ``other``，同样不计入合计——**宁可少算并说明，
+    也不要多算不说**。
+    """
+
+    def __init__(
+        self,
+        consumed: Sequence[str] = (),
+        pending: Sequence[str] = (),
+        cancelled: Sequence[str] = (),
+        in_progress: Sequence[str] = (),
+        *,
+        source: str = "",
+    ) -> None:
+        self.consumed = tuple(consumed)
+        self.pending = tuple(pending)
+        self.cancelled = tuple(cancelled)
+        self.in_progress = tuple(in_progress)
+        self.source = source
+
+    def classify(self, status: str) -> str:
+        text = str(status or "").strip()
+        if not text:
+            return "other"
+        for name, values in (
+            ("consumed", self.consumed),
+            ("pending", self.pending),
+            ("cancelled", self.cancelled),
+            ("in_progress", self.in_progress),
+        ):
+            if text in values:
+                return name
+        return "other"
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any], *, source: str = "") -> "OrderStatusPolicy":
+        def values(key: str) -> tuple[str, ...]:
+            raw = data.get(key) or []
+            if not isinstance(raw, (list, tuple)):
+                raise ValueError(f"订单状态策略的 {key!r} 必须是数组")
+            return tuple(str(item) for item in raw)
+
+        consumed = values("consumed")
+        if not consumed:
+            raise ValueError(
+                "订单状态策略必须至少定义一个 consumed 状态，"
+                "否则所有订单都会被排除、合计恒为 0"
+            )
+        return cls(consumed, values("pending"), values("cancelled"),
+                   values("in_progress"), source=source)
+
+
+# 未显式提供策略时的兜底。取值与 data/order_status.json 保持一致；
+# 命令行入口始终从该文件加载，这里只是给库调用方一个可用的默认值。
+# 注意：未列出的状态一律归入 other 且**不计入合计**，所以默认值偏保守是安全的。
+DEFAULT_STATUS_POLICY = OrderStatusPolicy(
+    consumed=("订单已完成",),
+    pending=("待支付", "待付款", "未支付"),
+    cancelled=("已取消", "已退款", "退款中", "支付失败", "支付超时", "已关闭"),
+    in_progress=("备餐中", "制作中", "待取餐", "待配送", "配送中", "已支付", "已接单"),
+)
+
+
 @dataclass(frozen=True)
 class OrderUnit:
     """一件实际入口的商品（套餐已展开）。"""
@@ -61,8 +146,14 @@ class OrderCalories:
     paid: str
     units: list[UnitResult] = field(default_factory=list)
     order_status: str = ""
+    status_class: str = "other"
 
     # ---------------------------------------------------------------- #
+
+    @property
+    def is_consumed(self) -> bool:
+        """是否属于「已吃到」的订单。只有这类才计入热量合计。"""
+        return self.status_class == "consumed"
 
     @property
     def total_units(self) -> int:
@@ -195,8 +286,13 @@ def expand_order(order: Mapping) -> list[OrderUnit]:
     return units
 
 
-def compute_order(order: Mapping, matcher: ProductMatcher) -> OrderCalories:
+def compute_order(
+    order: Mapping,
+    matcher: ProductMatcher,
+    policy: OrderStatusPolicy | None = None,
+) -> OrderCalories:
     """折算一条订单的卡路里。"""
+    active = policy or DEFAULT_STATUS_POLICY
     result = OrderCalories(
         order_id=str(order.get("orderId", "")),
         create_time=str(order.get("createTime", "")),
@@ -204,6 +300,7 @@ def compute_order(order: Mapping, matcher: ProductMatcher) -> OrderCalories:
         store_code=str(order.get("storeCode", "")),
         paid=str(order.get("realTotalAmount", "")),
         order_status=str(order.get("orderStatus", "")),
+        status_class=active.classify(order.get("orderStatus", "")),
     )
     # 名称去重缓存，避免同一商品重复匹配
     cache: dict[str, MatchResult] = {}
@@ -214,8 +311,12 @@ def compute_order(order: Mapping, matcher: ProductMatcher) -> OrderCalories:
     return result
 
 
-def compute_orders(orders: Iterable[Mapping], matcher: ProductMatcher) -> list[OrderCalories]:
-    return [compute_order(order, matcher) for order in orders]
+def compute_orders(
+    orders: Iterable[Mapping],
+    matcher: ProductMatcher,
+    policy: OrderStatusPolicy | None = None,
+) -> list[OrderCalories]:
+    return [compute_order(order, matcher, policy) for order in orders]
 
 
 # --------------------------------------------------------------------- #

@@ -15,7 +15,7 @@
 
 ![Deps](https://img.shields.io/badge/Dependencies-zero-27251F?style=for-the-badge)
 
-![Tests](https://img.shields.io/badge/Tests-84%20passed-2ea44f?style=for-the-badge)
+![Tests](https://img.shields.io/badge/Tests-95%20passed-2ea44f?style=for-the-badge)
 
 ![License](https://img.shields.io/badge/License-MIT-27251F?style=for-the-badge)
 
@@ -123,7 +123,7 @@ $ mcd-calories --detail
 
 ---
 
-## 🔒 三条不可动摇的规则
+## 🔒 四条不可动摇的规则
 
 ### 1. 硬约束优先于相似度——因为错答案的相似度更高
 
@@ -151,7 +151,33 @@ similarity(可口可乐中杯, 可乐中杯)        = 0.633
 
 安全区间实测为 `(0.312, 0.633]`。**宁可漏，不可错**——热量工具里的假阳性会静默污染数值，比承认一个缺口糟糕得多。
 
-### 3. 覆盖率是硬性输出，绝不隐藏
+### 3. 未支付订单不计入「已摄入」
+
+`order-list` 会返回**未支付**订单。实测账号里就有 1 条「待支付」——如果直接计入合计，
+就会把**还没吃到的东西算成已经吃进去的热量**。
+
+所以本项目把订单状态分类（规则见 `data/order_status.json`）：**只有「订单已完成」计入合计**，
+待支付 / 进行中 / 已取消 / 状态未识别一律**单独展示并披露**：
+
+```console
+【已消费】计入合计
+2026-09-18 12:29      482 kcal  2/2       上海康建商务广场得来速餐厅
+...
+==============================================================================
+【待支付】**不计入合计**  —— 未支付，还没吃到
+2026-10-09 17:01     ≥436 kcal  2/4    ⚠️ 麦当劳上海古浪路桃浦星品荟餐厅
+==============================================================================
+已消费 9 单 · 完整覆盖 9/9 单 · 覆盖商品 41/41 项 · 已覆盖部分合计 11211 kcal
+未计入合计：待支付 1 单（≥436 kcal）
+```
+
+待支付订单的卡路里**仍然会算出来**——它本身是有用信息（"你有个待支付订单，约 436 kcal"），
+只是不能混进「已摄入」。
+
+> ⚠️ 另外注意：`order-list` **没有分页参数，只返回最近 10 条**。新订单会把最老一条挤出窗口，
+> 所以本项目给出的是**近期窗口**内的统计，不是全部历史。
+
+### 4. 覆盖率是硬性输出，绝不隐藏
 
 实测某单只覆盖 1/4 项时算出 87 kcal，而真实热量在 800 kcal 以上。**只给数字不给出覆盖率会严重误导。**
 
@@ -257,7 +283,7 @@ mcd-calories doctor           # 检查连通性与所需工具
 **零依赖运行**——用标准库 `unittest`，clone 下来不用装任何东西就能验证：
 
 ```bash
-PYTHONPATH=src python3 -m unittest discover -s tests -t tests    # 84 passed
+PYTHONPATH=src python3 -m unittest discover -s tests -t tests    # 95 passed
 ```
 
 测试锁死的都是**实测踩过的坑**，不是设想的边界：
@@ -276,7 +302,7 @@ PYTHONPATH=src python3 -m unittest discover -s tests -t tests    # 84 passed
 
 | 项                                | 状态                          |
 | -------------------------------- | --------------------------- |
-| 协议实现（握手 / MCP 调用 / 响应解析）         | ✅ 84 项测试全绿                  |
+| 协议实现（握手 / MCP 调用 / 响应解析）         | ✅ 95 项测试全绿                  |
 | 归一化与五级匹配                         | ✅ 端到端跑通                     |
 | 真实端点 `https://mcp.mcd.cn` 真实账号数据 | ✅ **10/10 单完整覆盖，45/45 项命中** |
 | 估算值（5 项）                         | ⚠️ 见上方区间与推导，**非官方数据**       |
@@ -307,7 +333,7 @@ PYTHONPATH=src python3 -m unittest discover -s tests -t tests    # 84 passed
 │   ├── orders.py              # 订单展开、覆盖率、缺口台账
 │   ├── cli.py                 # 命令行入口
 │   └── data/                  # 四张人工维护表
-├── tests/                     # 84 项测试（零依赖 unittest）
+├── tests/                     # 95 项测试（零依赖 unittest）
 ├── docs/
 │   └── data-maintenance.md    # 四张数据表的维护流程
 └── examples/

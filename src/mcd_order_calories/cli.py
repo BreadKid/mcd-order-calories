@@ -14,7 +14,7 @@ from .matching import AliasTable, ProductMatcher
 from .supplements import SupplementCatalog
 from .mcp_client import McpError, McpHttpClient
 from .nutrition import parse_nutrition
-from .orders import GapLedger, compute_orders
+from .orders import STATUS_LABELS, GapLedger, OrderStatusPolicy, compute_orders
 from .payload import PayloadError, extract_data
 
 DEFAULT_URL = "https://mcp.mcd.cn"
@@ -42,6 +42,11 @@ def load_gap_ledger() -> GapLedger:
 def load_category_catalog() -> CategoryCatalog:
     return CategoryCatalog.from_dict(json.loads(_data_text("categories.json")),
                                      source="categories.json")
+
+
+def load_status_policy() -> OrderStatusPolicy:
+    return OrderStatusPolicy.from_dict(json.loads(_data_text("order_status.json")),
+                                       source="order_status.json")
 
 
 def load_supplement_catalog() -> SupplementCatalog:
@@ -145,7 +150,8 @@ def run(argv: Sequence[str] | None = None) -> int:
             matcher = ProductMatcher(nutrition, load_alias_table(),
                                      categories=load_category_catalog(),
                                      supplements=load_supplement_catalog())
-            results = compute_orders(orders_raw.get("list") or [], matcher)
+            results = compute_orders(orders_raw.get("list") or [], matcher,
+                                     load_status_policy())
 
             if args.command == "calories":
                 return _calories(args, results, matcher, nutrition, warnings)
@@ -178,11 +184,16 @@ def _calories(args, results, matcher, nutrition, warnings) -> int:
     if args.limit:
         results = results[: args.limit]
 
-    complete = [o for o in results if o.is_complete]
-    known = sum(o.known_kcal for o in results)
-    known_units = sum(o.known_units for o in results)
-    total_units = sum(len(o.substantive_units) for o in results)
-    units_all = [u for o in results for u in o.units]
+    # 只有「已消费」订单计入热量合计。
+    # order-list 会返回**未支付**订单，直接计入会把还没吃到的东西算成已摄入热量。
+    consumed = [o for o in results if o.is_consumed]
+    excluded = [o for o in results if not o.is_consumed]
+
+    complete = [o for o in consumed if o.is_complete]
+    known = sum(o.known_kcal for o in consumed)
+    known_units = sum(o.known_units for o in consumed)
+    total_units = sum(len(o.substantive_units) for o in consumed)
+    units_all = [u for o in consumed for u in o.units]
     supplement_units = [u for u in units_all if u.match.supplement is not None]
     category_units = [u for u in units_all
                       if u.match.is_assumed and u.match.supplement is None]
@@ -191,10 +202,19 @@ def _calories(args, results, matcher, nutrition, warnings) -> int:
     ledger = load_gap_ledger()
     triage = ledger.triage(results)
 
+    excluded_groups: dict[str, list] = {}
+    for order in excluded:
+        excluded_groups.setdefault(order.status_class, []).append(order)
+
     if args.json:
         print(json.dumps({
             "summary": {
-                "orders": len(results),
+                "orders_total": len(results),
+                "consumed_orders": len(consumed),
+                "excluded_orders": len(excluded),
+                "excluded_by_status": {
+                    STATUS_LABELS.get(k, k): len(v) for k, v in excluded_groups.items()
+                },
                 "complete_orders": len(complete),
                 "known_kcal": round(known, 1),
                 "covered_units": known_units,
@@ -204,6 +224,7 @@ def _calories(args, results, matcher, nutrition, warnings) -> int:
                 "category_default_kcal": category_kcal,
                 "supplement_units": len(supplement_units),
                 "supplement_kcal": supplement_kcal,
+                "scope_note": "known_kcal 只合计「已消费」订单；待支付/已取消/进行中/状态未知一律排除并单列。",
                 "assumed_category_note": "部分商品营养表未收录，按 categories.json 的品类默认值估算；蘸酱类不计入覆盖率分母，【美汁源】等实质品类计入。",
                 "estimated_note": "另有商品取自 supplements.json 的推导估算值，附区间与推导过程。",
             },
@@ -211,6 +232,8 @@ def _calories(args, results, matcher, nutrition, warnings) -> int:
                 {
                     "order_id": o.order_id, "create_time": o.create_time,
                     "store": o.store_name, "store_code": o.store_code, "paid": o.paid,
+                    "status": o.order_status, "status_class": o.status_class,
+                    "counted_in_total": o.is_consumed,
                     "kcal": o.known_kcal, "is_complete": o.is_complete,
                     "covered": o.known_units, "total": len(o.substantive_units),
                     "assumed_kcal": o.assumed_kcal, "assumed_units": len(o.assumed_units),
@@ -242,19 +265,47 @@ def _calories(args, results, matcher, nutrition, warnings) -> int:
     print(f"营养表 {len(nutrition)} 条 · 别名表 {len(matcher.aliases)} 条 · 已判定缺口 {len(ledger)} 条")
     for warning in warnings:
         print(f"  ⚠️ 数据源：{warning}")
+
+    def render_group(title: str, orders: list, *, counted: bool, note: str = "") -> None:
+        if not orders:
+            return
+        print("=" * 78)
+        tag = "计入合计" if counted else "**不计入合计**"
+        print(f"【{title}】{tag}" + (f"  —— {note}" if note else ""))
+        for order in orders:
+            if args.detail:
+                print(order.render())
+                print("-" * 78)
+            else:
+                label = f"{order.known_kcal:.0f}" if order.is_complete else f"≥{order.known_kcal:.0f}"
+                flag = "  " if order.is_complete else "⚠️"
+                print(f"{order.create_time[:16]:<18}{label:>7} kcal  "
+                      f"{order.known_units}/{len(order.substantive_units):<5}{flag} {order.store_name}")
+
+    render_group("已消费", consumed, counted=True)
+    for status_class in ("pending", "in_progress", "cancelled", "other"):
+        group = excluded_groups.get(status_class) or []
+        if not group:
+            continue
+        note = {
+            "pending": "未支付，还没吃到",
+            "in_progress": "尚未完成",
+            "cancelled": "已取消或退款",
+            "other": "状态未识别，保守排除",
+        }.get(status_class, "")
+        render_group(STATUS_LABELS.get(status_class, status_class), group,
+                     counted=False, note=note)
+
     print("=" * 78)
-    for order in results:
-        if args.detail:
-            print(order.render())
-            print("-" * 78)
-        else:
-            label = f"{order.known_kcal:.0f}" if order.is_complete else f"≥{order.known_kcal:.0f}"
-            flag = "  " if order.is_complete else "⚠️"
-            print(f"{order.create_time[:16]:<18}{label:>7} kcal  "
-                  f"{order.known_units}/{len(order.substantive_units):<5}{flag} {order.store_name}")
-    print("=" * 78)
-    print(f"完整覆盖 {len(complete)}/{len(results)} 单 · "
+    print(f"已消费 {len(consumed)} 单 · 完整覆盖 {len(complete)}/{len(consumed)} 单 · "
           f"覆盖商品 {known_units}/{total_units} 项 · 已覆盖部分合计 {known:.0f} kcal")
+    if excluded:
+        parts = []
+        for status_class, group in excluded_groups.items():
+            subtotal = round(sum(o.known_kcal for o in group), 1)
+            parts.append(f"{STATUS_LABELS.get(status_class, status_class)} {len(group)} 单（≥{subtotal:.0f} kcal）")
+        print(f"未计入合计：{'、'.join(parts)}")
+        print("    以上订单未纳入热量合计——待支付/已取消不算已摄入，状态未知则保守排除。")
     if category_units:
         print(f"另有 {len(category_units)} 项按**品类默认值**计 {category_kcal:.0f} kcal"
               f"（估算，非营养表官方数据；规则见 categories.json）")
@@ -266,13 +317,13 @@ def _calories(args, results, matcher, nutrition, warnings) -> int:
         print(f"另有 {len(supplement_units)} 项取自**推导估算值**，合计 {supplement_kcal:.0f} kcal"
               f"（非营养表官方数据；见 supplements.json）")
         print(f"    {detail}")
-    if len(complete) < len(results):
+    if len(complete) < len(consumed):
         print("⚠️ 存在未覆盖商品，带 ≥ 的数值是**下界**，不是该单总热量。用 --detail 查看缺了什么。")
     if triage["new"]:
         print(f"\n⚠️ 出现 {len(triage['new'])} 个未判定商品（不在缺口台账中）："
               f"{'、'.join(triage['new'])}")
         print("   请用 `mcd-calories explain <名称>` 判断是「可别名映射」还是「营养表未收录」，")
-        print("   然后分别登记到 aliases.json 或 known_gaps.json。")
+        print("   然后分别登记到 aliases.json / categories.json / supplements.json / known_gaps.json。")
     return 0
 
 

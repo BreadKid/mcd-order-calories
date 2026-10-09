@@ -94,6 +94,15 @@ class TestShippedDataLoads(unittest.TestCase):
         self.assertEqual(bench["厚松饼"], 132)
         self.assertIn("按片计", bench["_厚松饼推导"])
 
+    def test_status_policy_loads_and_is_conservative(self) -> None:
+        """出厂状态策略必须可加载，且未识别状态一定不计入合计。"""
+        from mcd_order_calories.cli import load_status_policy
+
+        policy = load_status_policy()
+        self.assertEqual(policy.classify("订单已完成"), "consumed")
+        self.assertEqual(policy.classify("待支付"), "pending")
+        self.assertEqual(policy.classify("从没见过的状态"), "other")
+
     def test_gap_ledger_entries_all_have_reasons(self) -> None:
         ledger = load_gap_ledger()
         for name, reason in ledger.entries.items():
