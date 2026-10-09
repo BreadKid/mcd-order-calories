@@ -18,7 +18,10 @@
 
 客户端实现的 MCP 方法：`initialize` → `notifications/initialized` → `tools/list` → `tools/call`，并透传服务端下发的 `Mcp-Session-Id`、退出时尝试 `DELETE` 释放会话。
 
-> ⚠️ Token 为个人申请，仅通过环境变量传入，**不写入本仓库任何文件**。仓库内的 [`mcp-config.example.json`](./mcp-config.example.json) 只含环境变量占位符。
+> ⚠️ Token 为个人申请，仅通过环境变量、本地 `.env` 或宿主连接器传入，**不写入本仓库任何文件**。
+> 仓库内的 [`mcp-config.example.json`](./mcp-config.example.json) 与
+> [`mcp-config/workbuddy.json`](./mcp-config/workbuddy.json) **只含环境变量占位符**。
+> WorkBuddy 的接入方式见 [`INSTALL.md`](./INSTALL.md)。
 
 ```json
 {
@@ -45,13 +48,17 @@
 
 **这两个工具的关系就是本项目的全部难点**：订单按 `productCode` + 商品名组织，营养表**只有商品名、没有 code**，所以只能按名字对齐。
 
-### 2.2 辅助工具（可选，用于诊断与交叉验证）
+### 2.2 其他工具（本项目的实际调用不含它们）
 
-| Tool | 用途 | 说明 |
+| Tool | 用途 | 本项目是否调用 |
 |---|---|---|
-| `query-meals` | 查门店当前菜单 | 用于**按 productCode 反查官方商品名**。实测命中率仅 35%——因为菜单只反映**当前在售**，季节品与已下架商品查不到，故仅作辅助而非主要对齐手段 |
-| `query-meal-detail` | 查餐品套餐组成 | 同上，用于确认为什么某个商品名对不上 |
-| `now-time-info` | 服务端当前时间 | 诊断用 |
+| `query-meals` | 查门店当前菜单（可用于按 productCode 反查官方商品名，但实测命中率仅 35%——菜单只反映**当前在售**，季节品与已下架商品查不到） | ❌ 不调用 |
+| `query-meal-detail` | 查餐品套餐组成 | ❌ 不调用 |
+| `now-time-info` | 服务端当前时间 | ❌ 不调用 |
+
+> **实际调用面只有两个只读查询接口**：`order-list` 与 `list-nutrition-foods`。
+> `--list-tools` 自检时只做「工具清单里有没有这两个」的检查，不会因为缺少其他工具而失败。
+> 未来若要用 `query-meals` 做交叉验证，会在本节把「实测命中率」一并升级为正式数据。
 
 > **本项目不调用任何写操作**：不涉及 `create-order` / `mall-create-order` / `party-order-create` / `cancel-order` / `auto-bind-coupons` / `draw-lottery` / `delivery-create-address`。全程只读。
 
@@ -67,7 +74,7 @@ flowchart TB
     C --> D["list-nutrition-foods<br/>解析 158 条商品 → 热量"]
     D --> E["order-list<br/>取出历史订单"]
     E --> F["展开套餐<br/>用 comboItemList 替换套餐容器名"]
-    F --> G["五级级联匹配<br/>alias → exact → supplement → category → stripped → guarded"]
+    F --> G["多级级联匹配<br/>alias → exact → supplement → category → stripped → guarded"]
     G --> H["汇总每单热量<br/>并计算覆盖率"]
     H --> I["渲染<br/>覆盖率不足时标注为下界"]
     style A fill:#FFC72C,color:#27251F
@@ -80,7 +87,7 @@ flowchart TB
     style I fill:#27251F,color:#fff
 ```
 
-### 五级匹配的详细决策流
+### 多级匹配的详细决策流
 
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#DA291C', 'primaryTextColor': '#fff', 'secondaryColor': '#FFC72C', 'tertiaryColor': '#27251F', 'lineColor': '#27251F'}}}%%
@@ -169,15 +176,36 @@ flowchart TB
 
 ### 4.4 安全与脱敏
 
-- Token 只从环境变量或 `--token` 读取，**不落盘、不进日志**。
+- Token 只从环境变量、`.env` 或 `--token` 读取；诊断输出中脱敏为 `abcd…wxyz`，**不进日志、不进交付物**。
+- 各平台 MCP 配置样例（`mcp-config/`）只含 `${MCD_MCP_TOKEN}` 占位符。
 - 仓库内不含真实 Token、密钥、账号凭证、手机号、邮箱或他人个人信息。
 - 仓库内的运行示例**已隐去账号标识**，只保留商品与热量结构。
 - **全程只读**：不调用任何下单 / 领券 / 抽奖 / 改地址等写接口。
 - 仅通过官方 MCP 接口访问数据，未抓取、未内嵌任何非公开数据。
 
-### 4.5 兼容性
+### 4.5 Agent 适配（当前只做 WorkBuddy）
 
-仅依赖 Python 标准库（`json` / `urllib` / `socket` / `re` / `unicodedata` / `dataclasses`），Python 3.9+ 直接运行，无需安装 MCP SDK。测试用标准库 `unittest`，`clone` 下来零安装即可复现全部 107 项。
+本项目的 MCP 能力有两种消费方式，彼此独立：
+
+| 路径 | 谁在调用 | Token 从哪来 |
+|---|---|---|
+| **宿主直连 MCP** | Agent 工具自己——当前已适配 **WorkBuddy** 自定义连接器，按 `mcp-config/workbuddy.json` 调用 `order-list` 与 `list-nutrition-foods` | 连接器配置里的 `Authorization: Bearer ${MCD_MCP_TOKEN}` |
+| **CLI / 库调用** | 本项目自带的零依赖 Streamable HTTP 客户端 | `$MCD_MCP_TOKEN` → 当前目录 `.env` → 技能根目录 `.env`（查找顺序见 `src/mcd_order_calories/config.py`），或 `--token` |
+
+适配要点：
+
+1. **`SKILL.md` 是唯一入口描述**（Anthropic Agent Skills 规范），负责「何时使用 / 何时不使用 / 输出约定」；
+2. **`install.sh` 负责落盘位置**，默认 `~/.workbuddy/skills/mcd-order-calories/`，也可用 `--dir` 指定任意目录；
+3. **未适配渠道是显式占位**：`bash install.sh kiro` 会打印「尚未适配」并以退出码 `2` 结束、
+   **不写任何文件**——宁可明确失败，也不要把 Skill 装到没验证过的位置；
+4. **`.env` 查找不依赖工作目录**，因为 Skill 常被复制到别处；已存在的环境变量优先级最高；
+5. **界面连接器与命令行是两套凭据入口**：前者供 WorkBuddy 调用 MCP 工具，后者靠技能目录的 `.env`。
+
+> 后续补齐其他渠道时，需同步更新 `install.sh`、`mcp-config/`、`INSTALL.md` 与本节的表格。
+
+### 4.6 兼容性
+
+仅依赖 Python 标准库（`json` / `urllib` / `socket` / `re` / `unicodedata` / `dataclasses`），Python 3.9+ 直接运行，无需安装 MCP SDK。测试用标准库 `unittest`，`clone` 下来零安装即可复现全部 133 项。
 
 ---
 
@@ -210,15 +238,19 @@ flowchart TB
 ## 六、如何自行验证
 
 ```bash
-export MCD_MCP_TOKEN="你的 Token"
+cp .env.example .env                    # 0) 填入真实 MCD_MCP_TOKEN
 
-mcd-calories doctor                     # 1) 连通性与所需工具
+mcd-calories --list-tools               # 1) 连通性与所需工具（含脱敏 Token 与生效的 .env）
 mcd-calories                            # 2) 订单卡路里一览
 mcd-calories --detail                   # 3) 展开每单明细与推导
 mcd-calories explain 双层脆鸡堡           # 4) 单商品判定理由与候选
 mcd-calories gaps                       # 5) 未匹配商品（已知缺口 / 新出现）
 
-PYTHONPATH=src python3 -m unittest discover -s tests -t tests   # 6) 107 项测试
+PYTHONPATH=src python3 -m unittest discover -s tests -t tests   # 6) 133 项测试
+bash install.sh --dir /tmp/wb --dry-run  # 7) WorkBuddy 安装演练（不写任何文件）
+bash install.sh kiro                    # 8) 未适配渠道：应报「尚未适配」并退出码 2
 ```
+
+未安装 CLI 时，把 `mcd-calories` 换成 `PYTHONPATH=src python3 -m mcd_order_calories.cli`。
 
 **本项目不产生任何写操作**，全部命令都是只读的。

@@ -1,10 +1,11 @@
-<div align="center">
-
 # 🍔 订单卡路里一览 · mcd-order-calories
 
-### 把麦当劳历史订单，折算成看得懂的卡路里
+> 基于麦当劳**官方 MCP 真实数据**，把历史订单折算成看得懂的卡路里。
+> 说一句「算算我吃过多少卡」，它拉出订单、展开套餐成分、对齐营养表，逐单给出热量——
+> **并且如实告诉你哪几项没算出来**。
 
-**说一句「算算我吃过多少卡」，它拉出你的历史订单、展开套餐成分、对齐营养表，逐单给出热量——并且如实告诉你哪几项没算出来。**
+一个为「麦当劳程序员节创意开发大赛」开发的开源 Skill，也是一份
+「**两个数据源只能按商品名对齐**」的工程参考。
 
 ![Type](https://img.shields.io/badge/Type-MCP%20Skill-DA291C?style=for-the-badge)
 
@@ -12,28 +13,60 @@
 
 ![Deps](https://img.shields.io/badge/Dependencies-zero-27251F?style=for-the-badge)
 
-![Tests](https://img.shields.io/badge/Tests-107%20passed-2ea44f?style=for-the-badge)
+![Tests](https://img.shields.io/badge/Tests-133%20passed-2ea44f?style=for-the-badge)
 
 ![License](https://img.shields.io/badge/License-MIT-27251F?style=for-the-badge)
 
 > 💛 如果这个思路对你有用，点个 **⭐ Star** 支持一下！本作品正在参加「麦当劳程序员节创意开发大赛」，Star 数决定排名 🙏
 
-</div>
-
 ---
 
 ## 📖 项目介绍
 
-**订单卡路里一览**是一个基于**麦当劳中国 MCP** 的**只读** Skill：拉取你的历史订单，展开套餐成分，与官方营养表对齐，逐单算出热量。
+**订单卡路里一览**是一个基于**麦当劳中国 MCP** 的**只读** Skill：拉取你的历史订单，
+展开套餐成分，与官方营养表对齐，逐单算出热量。
 
-算法本身只有一行 `Σ(kcal × 数量)`。真正的工作量在于**商品归一**——订单与营养表只能按**商品名**对齐，而两边命名习惯不同（套餐容器 vs 真实成分、`可口可乐中杯` vs `可乐中杯`、全角括号 vs 半角…）。本项目用**五级级联匹配**处理，并且**算不出来的部分如实披露，绝不拿一个偏低的下界冒充总量**。
+算法本身只有一行 `Σ(kcal × 数量)`。真正的工作量在于**商品归一**——订单与营养表只能按
+**商品名**对齐，而两边命名习惯不同（套餐容器 vs 真实成分、`可口可乐中杯` vs `可乐中杯`、
+全角括号 vs 半角……）。本项目用**多级级联匹配**处理，并且
+**算不出来的部分如实披露，绝不拿一个偏低的下界冒充总量**。
 
 |        |                                                         |
 | ------ | ------------------------------------------------------- |
 | **输入** | 你的麦当劳账号（通过 `MCD_MCP_TOKEN`）                             |
 | **输出** | 每单热量 + 覆盖率 + 每个数的来源层级与不确定性                              |
 | **调用** | 仅 `order-list` 与 `list-nutrition-foods` 两个查询接口，**全程只读** |
+| **安装** | 通用 Agent Skill（`SKILL.md`），一键装到 Claude Code / Kiro / Cursor / WorkBuddy 等 |
 | **依赖** | 零第三方依赖，纯 Python 标准库；`clone` 下来零安装即可运行与测试                |
+
+---
+
+## ✨ 核心能力
+
+### 1. 🧮 订单热量折算（`calories`，默认命令）
+
+拉取历史订单 → 展开套餐成分 → 与营养表逐项对齐 → 按门店/时间逐单给出热量与覆盖率。
+
+### 2. 🔍 覆盖率与不确定性显式披露
+
+覆盖率不足 100% 的数值一律标注为**下界**（`≥`），并列出到底缺了哪些商品；
+估算值附**区间、置信度、推导过程**。
+
+### 3. 🧩 可审计的估算值（`supplements.json`）
+
+营养表只收录 158 条，实际商品远多于此。能推导的按「推导 + 区间 + 非官方来源」三条硬规矩登记，
+推不出来的登记为**已知缺口**，在输出中如实披露。
+
+### 4. 🩺 单商品判定解释（`explain`）
+
+任意商品名都能看到**判定层级、理由与全部候选**（含被淘汰的原因）——
+相似度只作人工参考，**从不作为自动决策依据**。
+
+### 5. 🤖 Agent 适配（`install.sh` + `mcp-config/`）
+
+同一份 Skill 可通过 `SKILL.md`（负责「何时用」）、`install.sh`（负责「装到哪」）、
+`mcp-config/`（负责「怎么连」）接入 Agent 工具。
+**当前只适配 WorkBuddy**，其他渠道是保留的占位，后续按同一张表逐个补齐。详见 [INSTALL.md](./INSTALL.md)。
 
 ---
 
@@ -87,48 +120,126 @@ $ mcd-calories --detail
               【方法B】513 − 24(马芬→面包) − 79(去蛋) − 46(去芝士) + 85(加酱) = 449
         来源：...①本堡是否含芝士——若含，实际值约 496（故区间上界给到 495）...
 ```
+
 ---
 
-## 🚀 快速开始
+## 👥 目标用户
 
-三步：**安装 → 配置 Token → 运行**。需要 Python ≥ 3.9，**零第三方依赖**。
+| 用户                | 场景                            | 本项目解决什么                               |
+| ----------------- | ----------------------------- | ------------------------------------- |
+| **在做饮食管理的人**      | 减脂 / 增肌 / 控糖期间仍会吃麦当劳，需要知道实际摄入 | App 只显示订单不显示热量；本项目把历史订单折算成卡路里         |
+| **想复盘自己饮食习惯的人**   | 「我这个月到底吃了多少麦当劳、热量多高」          | 一次列出全部历史订单的热量，并可按门店/时间观察              |
+| **麦当劳高频用户**       | 常点固定几样，想知道这些到底多少卡             | 常点商品逐项列出热量与匹配来源                       |
+| **营养 / 健康类内容创作者** | 需要可引用的数据，且必须说明数据来源与不确定性       | 每个数都标注来源层级；估算值附区间、置信度与推导过程            |
+| **Agent 开发者**     | 需要一个「两个数据源只能按名称对齐」的工程参考       | 多级级联匹配 + 假阳性防御 + 覆盖率披露，可作为 MCP 工程范式参考 |
 
-### 安装方法
+> ⚠️ **重要边界**：本项目给出的是**估算参考**，不是医学或营养诊断依据。营养表未收录的商品按文中标注的方式估算并显式披露区间；覆盖率不足时数值是**下界**。请勿据此做严格的医学决策。
 
-有两种，任选：
+---
+
+## 📦 安装
+
+> 💡 本项目是一个遵循 [Anthropic Agent Skills 开放规范](https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills)（`SKILL.md`）的**通用 Skill**。
+> **当前只适配 WorkBuddy**（一键安装 + 界面连接器配置）；其他平台的适配留待后续实现，
+> 在 `install.sh` 与 [INSTALL.md](./INSTALL.md) 里都是**明确标注的占位**。
+
+前置要求：**Python >= 3.9**，零第三方依赖（不需要 `pip install` 也能跑）。
 
 ```bash
-# 方式一：安装为命令行工具（推荐）
-git clone <this-repo>
+git clone <your-repo-url>
 cd mcd-order-calories
+
+# 方式一：一键装到 WorkBuddy（默认目标）
+bash install.sh --token "$MCD_MCP_TOKEN"     # 顺带生成技能目录下的 .env，命令行也能直接用
+bash install.sh                              # 不带 Token 也行，Token 在 WorkBuddy 界面里填
+
+# 方式二：装到任意目录（未适配平台的临时方案）
+bash install.sh --dir /任意/skills/目录 --token "$MCD_MCP_TOKEN"
+
+# 方式三：不安装，直接在仓库里跑
+cp .env.example .env
+# 编辑 .env，把 MCD_MCP_TOKEN 换成你在 https://github.com/M-China/mcd-mcp-server 申请到的真实 Token
+```
+
+装完后在 WorkBuddy 里配置 MCP 连接器（左侧【专家·技能·连接器】→【连接器】→
+【自定义连接器】→【配置MCP】），粘贴 [`mcp-config/workbuddy.json`](./mcp-config/workbuddy.json)
+的内容并替换 `${MCD_MCP_TOKEN}`，保存并启用。完整步骤与常见问题见 [INSTALL.md](./INSTALL.md)。
+
+| 平台 | 状态 |
+|---|---|
+| **WorkBuddy** | ✅ 已适配（`bash install.sh` + 界面连接器） |
+| Kiro / Claude Code / Claude Desktop / Cursor / VSCode / Cherry Studio | ⏳ 占位，尚未适配 |
+
+> `bash install.sh kiro` 这类未适配渠道会**明确报「尚未适配」并以退出码 2 退出**——
+> 宁可明确失败，也不要把 Skill 装到一个没验证过的位置。
+
+> ⚠️ **安全**：`.env` 已被 `.gitignore` 忽略，`install.sh` 复制 Skill 时也会**排除**它，
+> 请在界面里单独填 Token，不要把真实 Token 提交到任何公开仓库。
+
+---
+
+## 🚀 使用示例
+
+### 命令行（不依赖任何 Agent 工具）
+
+```bash
+# 未安装时用模块方式运行（clone 下来即可）
+PYTHONPATH=src python3 -m mcd_order_calories.cli --list-tools   # 连通性自检
+PYTHONPATH=src python3 -m mcd_order_calories.cli                # 订单卡路里一览（默认）
+PYTHONPATH=src python3 -m mcd_order_calories.cli --detail       # 展开每单明细与估算推导
+PYTHONPATH=src python3 -m mcd_order_calories.cli --json         # 结构化输出
+PYTHONPATH=src python3 -m mcd_order_calories.cli gaps           # 未匹配商品（已知缺口 / 新出现）
+PYTHONPATH=src python3 -m mcd_order_calories.cli explain 双层脆鸡堡
+
+# 安装为命令行工具后可以更短
 python3 -m pip install -e .
-mcd-calories                     # 安装后可直接用
-
-# 方式二：不安装，直接以模块方式运行
-PYTHONPATH=src python3 -m mcd_order_calories.cli
+mcd-calories --detail
 ```
 
-### 配置 Token
+### 自然语言（在 Agent 工具里）
 
-在 [M-China/mcd-mcp-server](https://github.com/M-China/mcd-mcp-server) 申请后设置环境变量：
+- "算算我最近在麦当劳吃了多少卡路里"
+- "我这几单麦乐鸡加起来多少热量？"
+- "有没有算不出来的商品？"
+- "「那么大鸡排（椒盐风味）」在营养表里对应哪一条？"
 
-```bash
-export MCD_MCP_TOKEN="你的 Token"
+### 未配置 Token 时
+
+程序不会编造数据，而是给出清晰的配置引导并以退出码 2 结束：
+
+```console
+$ mcd-calories
+
+缺少 MCP Token：无法读取麦当劳订单。
+
+配置方式（任选其一）：
+  1. 复制并填写 .env（推荐）：
+       cp .env.example .env      # 然后把 MCD_MCP_TOKEN 换成你的真实 Token
+  2. 直接设置环境变量：
+       export MCD_MCP_TOKEN="你的 Token"
+  3. 命令行传入：
+       mcd-calories --token "你的 Token"
+
+Token 申请：https://github.com/M-China/mcd-mcp-server
+说明：Token 只从环境变量 / .env / 命令行读取，本项目不会写入或上传任何凭据。
 ```
 
-### 使用示例
+### 命令行参数
 
-```bash
-mcd-calories                  # 订单卡路里一览（默认命令，不写子命令也行）
-mcd-calories --detail         # 展开每单的商品明细与估算推导
-mcd-calories --json           # 结构化输出，便于程序消费
-mcd-calories gaps             # 列出未匹配商品，区分「已知缺口」与「新出现」
-mcd-calories explain 双层脆鸡堡  # 解析单个商品名，展示判定理由与全部候选
-mcd-calories doctor           # 检查连通性与所需工具
-```
-
-未安装时把上面的 `mcd-calories` 换成 `PYTHONPATH=src python3 -m mcd_order_calories.cli`。
-
+| 命令 / 参数 | 说明 |
+|---|---|
+| `calories` | 订单卡路里一览（**默认命令**，不写也行） |
+| `explain <商品名>` | 单商品判定理由与全部候选 |
+| `gaps` | 未匹配商品，区分「已知缺口」与「新出现」 |
+| `doctor` | 检查连通性与所需工具（同 `--list-tools`） |
+| `--list-tools` | 列出 MCP 可用工具（各 Agent 自检用） |
+| `--detail` | calories 时展开每单商品明细与估算推导 |
+| `--limit <n>` | calories 时只显示最近 N 单 |
+| `--json` | 结构化输出，便于程序消费 |
+| `--url <url>` | MCP 地址，默认 `$MCD_MCP_URL` 或 `https://mcp.mcd.cn` |
+| `--token <token>` | 默认读取 `$MCD_MCP_TOKEN` / `.env` |
+| `--timeout <秒>` | 请求超时，默认 60 |
+| `-h, --help` | 帮助 |
 
 ---
 
@@ -145,7 +256,7 @@ mcd-calories doctor           # 检查连通性与所需工具
 | 那么大鸡排（椒盐风味） | 那么大鸡排          | 尾部口味后缀       |
 | 【美汁源】“多汁柠柠” | *(营养表没有)*      | **覆盖缺口**     |
 
-本项目用**五级级联**处理，每一级都有明确的采纳条件：
+本项目用**多级级联**处理，每一级都有明确的采纳条件：
 
 | 层级 | 名称                        | 采纳条件                  | 信任度 |
 | -- | ------------------------- | --------------------- | --- |
@@ -186,7 +297,8 @@ similarity(可口可乐中杯, 可乐中杯)        = 0.633
 
 含糖与无糖只差两字，字符串上反而更「像」。如果按相似度排序取第一，**这一项会算错约 150 kcal**。
 
-所以本项目先做**硬约束**检查（含糖标记 / 杯型 / 规格 / 数量 / 冷热），冲突的候选一律淘汰，**且单方未标注不算冲突**（否则「可乐中杯」永远匹配不上「可口可乐中杯」）。
+所以本项目先做**硬约束**检查（含糖标记 / 杯型 / 规格 / 数量 / 冷热），冲突的候选一律淘汰，
+**且单方未标注不算冲突**（否则「可乐中杯」永远匹配不上「可口可乐中杯」）。
 
 实际输出——注意 `✗` 那一行的相似度**比正确答案还高**：
 
@@ -219,10 +331,10 @@ $ mcd-calories explain 可口可乐中杯
 
 ### 3. 未支付订单不计入「已摄入」
 
-`order-list` 会返回**未支付**订单。实测账号里就有 1 条「待支付」——如果直接计入合计，  
+`order-list` 会返回**未支付**订单。实测账号里就有 1 条「待支付」——如果直接计入合计，
 就会把**还没吃到的东西算成已经吃进去的热量**。
 
-所以本项目把订单状态分类（规则见 `data/order_status.json`）：**只有「订单已完成」计入合计**，  
+所以本项目把订单状态分类（规则见 `data/order_status.json`）：**只有「订单已完成」计入合计**，
 待支付 / 进行中 / 已取消 / 状态未识别一律**单独展示并披露**：
 
 ```console
@@ -237,10 +349,10 @@ $ mcd-calories explain 可口可乐中杯
 未计入合计：待支付 1 单（≥436 kcal）
 ```
 
-待支付订单的卡路里**仍然会算出来**——它本身是有用信息（"你有个待支付订单，约 436 kcal"），  
+待支付订单的卡路里**仍然会算出来**——它本身是有用信息（"你有个待支付订单，约 436 kcal"），
 只是不能混进「已摄入」。
 
-> ⚠️ 另外注意：`order-list` **没有分页参数，只返回最近 10 条**。新订单会把最老一条挤出窗口，  
+> ⚠️ 另外注意：`order-list` **没有分页参数，只返回最近 10 条**。新订单会把最老一条挤出窗口，
 > 所以本项目给出的是**近期窗口**内的统计，不是全部历史。
 
 ### 4. 覆盖率是硬性输出，绝不隐藏
@@ -292,23 +404,48 @@ $ mcd-calories explain 可口可乐中杯
 
 ---
 
-## 👥 目标用户
+## 🗂️ 项目结构
 
-| 用户                | 场景                            | 本项目解决什么                               |
-| ----------------- | ----------------------------- | ------------------------------------- |
-| **在做饮食管理的人**      | 减脂 / 增肌 / 控糖期间仍会吃麦当劳，需要知道实际摄入 | App 只显示订单不显示热量；本项目把历史订单折算成卡路里         |
-| **想复盘自己饮食习惯的人**   | 「我这个月到底吃了多少麦当劳、热量多高」          | 一次列出全部历史订单的热量，并可按门店/时间观察              |
-| **麦当劳高频用户**       | 常点固定几样，想知道这些到底多少卡             | 常点商品逐项列出热量与匹配来源                       |
-| **营养 / 健康类内容创作者** | 需要可引用的数据，且必须说明数据来源与不确定性       | 每个数都标注来源层级；估算值附区间、置信度与推导过程            |
-| **Agent 开发者**     | 需要一个「两个数据源只能按名称对齐」的工程参考       | 五级级联匹配 + 假阳性防御 + 覆盖率披露，可作为 MCP 工程范式参考 |
+```
+mcd-order-calories/
+├── README.md                     # 本文件
+├── INSTALL.md                    # 跨 Agent 平台安装与 MCP 配置指南
+├── SKILL.md                      # 通用 Agent Skill 入口（Anthropic 规范）
+├── MCP_INTEGRATION.md            # MCP Server / Tool / 调用流程 / 业务价值
+├── CONTEST_DECLARATION.md        # 参赛声明（官方原文，逐字节一致，请勿修改）
+├── install.sh                    # 一键安装到 WorkBuddy（其他渠道为占位，会明确报错）
+├── mcp-config.example.json       # 脱敏 MCP 配置示例（仅环境变量占位符）
+├── mcp-config/                   # MCP 配置样例
+│   ├── workbuddy.json            # ✅ 已适配（WorkBuddy 自定义连接器）
+│   └── README.md                 # 平台状态表与其他渠道留白说明
+├── .env.example                  # 环境变量模板
+├── pyproject.toml                # 打包配置（零第三方依赖）
+├── LICENSE
+├── src/mcd_order_calories/
+│   ├── config.py                 # 零依赖 .env 查找/解析（多 Agent 安装后仍能读到 Token）
+│   ├── mcp_client.py             # 零依赖 Streamable HTTP MCP 客户端
+│   ├── payload.py                # 解析服务端「字段说明 + JSON」混排返回
+│   ├── nutrition.py              # 营养表自定义分隔格式解析
+│   ├── normalize.py              # 归一化 + 硬约束（guard）提取
+│   ├── categories.py             # 品类规则（蘸酱 / 【美汁源】/ 厚松饼堡）
+│   ├── supplements.py            # 推导估算值与三条硬规矩校验
+│   ├── matching.py               # 多级级联匹配器（本项目核心）
+│   ├── orders.py                 # 订单展开、覆盖率、缺口台账
+│   ├── cli.py                    # 命令行入口
+│   └── data/                     # 四张人工维护表
+├── tests/                        # 133 项测试（零依赖 unittest）
+└── docs/
+    └── data-maintenance.md       # 数据表的维护流程
+```
 
-> ⚠️ **重要边界**：本项目给出的是**估算参考**，不是医学或营养诊断依据。营养表未收录的商品按文中标注的方式估算并显式披露区间；覆盖率不足时数值是**下界**。请勿据此做严格的医学决策。
+---
+
 ## 🧪 测试
 
 **零依赖运行**——用标准库 `unittest`，clone 下来不用装任何东西就能验证：
 
 ```bash
-PYTHONPATH=src python3 -m unittest discover -s tests -t tests    # 107 passed
+PYTHONPATH=src python3 -m unittest discover -s tests -t tests    # 133 passed
 ```
 
 测试锁死的都是**实测踩过的坑**，不是设想的边界：
@@ -322,46 +459,34 @@ PYTHONPATH=src python3 -m unittest discover -s tests -t tests    # 107 passed
 - 补充表**三条硬规矩**（推导 / 区间 / 来源）缺一即报错
 - 品类正则写错**在加载期报错**而非静默失效
 - 出厂的四份 JSON **真实加载**（最容易坏的不是代码而是数据）
+- `.env` 查找与解析（换任意工作目录后 Token 仍可被读到，且**不覆盖**已有环境变量）
 
 ### 验证状态（如实说明）
 
 | 项                                | 状态                          |
 | -------------------------------- | --------------------------- |
-| 协议实现（握手 / MCP 调用 / 响应解析）         | ✅ 107 项测试全绿                 |
-| 归一化与五级匹配                         | ✅ 端到端跑通                     |
+| 协议实现（握手 / MCP 调用 / 响应解析）         | ✅ 133 项测试全绿                 |
+| 归一化与多级匹配                         | ✅ 端到端跑通                     |
 | 真实端点 `https://mcp.mcd.cn` 真实账号数据 | ✅ **10/10 单完整覆盖，45/45 项命中** |
 | 估算值（5 项）                         | ⚠️ 见上方区间与推导，**非官方数据**       |
+| Agent 适配（`install.sh`）           | ✅ WorkBuddy 实装 + 幂等复装；未适配渠道明确报错且零副作用 |
+| 未适配渠道（Kiro / Claude Code / Cursor 等） | ⏳ 占位，尚未实现                    |
 
 > 与本作品另一个方向不同：这个项目的核心逻辑**已经用真实账号数据验证过**，不是只跑通 mock。
 
 ---
 
-## 🗂 项目结构
+## 🔌 MCP 集成
 
-```
-.
-├── README.md                  # 本文件
-├── CONTEST_DECLARATION.md     # 参赛声明（官方原文，逐字节一致，请勿修改）
-├── MCP_INTEGRATION.md         # MCP Server / Tool / 调用流程 / 业务价值
-├── mcp-config.example.json    # 脱敏 MCP 配置示例（仅环境变量占位符）
-├── SKILL.md                   # 通用 Agent Skill 入口
-├── pyproject.toml             # 打包配置（零第三方依赖）
-├── LICENSE
-├── src/mcd_order_calories/
-│   ├── mcp_client.py          # 零依赖 Streamable HTTP MCP 客户端
-│   ├── payload.py             # 解析服务端「字段说明 + JSON」混排返回
-│   ├── nutrition.py           # 营养表自定义分隔格式解析
-│   ├── normalize.py           # 归一化 + 硬约束（guard）提取
-│   ├── categories.py          # 品类规则（蘸酱 / 【美汁源】/ 厚松饼堡）
-│   ├── supplements.py         # 推导估算值与三条硬规矩校验
-│   ├── matching.py            # 五级级联匹配器（本项目核心）
-│   ├── orders.py              # 订单展开、覆盖率、缺口台账
-│   ├── cli.py                 # 命令行入口
-│   └── data/                  # 四张人工维护表
-├── tests/                     # 107 项测试（零依赖 unittest）
-└── docs/
-    └── data-maintenance.md    # 数据表的维护流程
-```
+本项目真实使用麦当劳官方 MCP Server（`https://mcp.mcd.cn`），实际调用**只有两个只读查询接口**：
+**`order-list`** 与 **`list-nutrition-foods`**。服务端另提供 `query-meals`、`now-time-info` 等工具，
+本项目**不依赖**它们（只在自检里确认工具清单）。单次运行**仅 2 次业务调用**，全程只读。
+完整的 Server / Tool / 调用流程 / 业务价值说明见 [MCP_INTEGRATION.md](./MCP_INTEGRATION.md)。
+
+- **纯实时**：每次运行都连 MCP 实时拉取，不存在内置的离线订单/营养快照。
+- **只读**：不调用任何下单、领券、抽奖类写操作。
+- **凭据安全**：Token 只从环境变量 / `.env` / 命令行读取，诊断输出中脱敏显示，
+  仓库内配置样例只含 `${MCD_MCP_TOKEN}` 占位符。
 
 ---
 
@@ -370,12 +495,12 @@ PYTHONPATH=src python3 -m unittest discover -s tests -t tests    # 107 passed
 - `CONTEST_DECLARATION.md` 为官方原文，**文件名与内容均未改动**（SHA-256 `cd28101bcb29cc8fb24b372fe91ce6b42c4a1487a54e01f7ade0c8c6a84241b7`）。
 - 仓库内不含任何真实 Token、密钥、账号凭证或他人个人信息；配置文件仅使用环境变量占位符。
 - 项目为参赛者原创，仅通过麦当劳官方 MCP 接口访问数据，未抓取或内嵌任何非公开数据。
-
-
 - **本项目只读**：仅调用 `order-list` 与 `list-nutrition-foods` 两个查询接口，不涉及任何下单、领券、抽奖等写操作。
 - 所有热量数值仅供估算参考，**不构成医疗、营养或其他专业建议**；餐品信息以麦当劳官方渠道实时结果为准。营养表未收录的商品按文中标注的估算方式处理，会显式披露区间与推导。
 
 > 本项目为「麦当劳程序员节创意开发大赛」参赛作品，由参赛者独立开发，**非麦当劳官方产品**。
+
+---
 
 ## 📄 License
 

@@ -121,7 +121,7 @@ mcd-calories explain "某商品名"          # 看判定理由、全部候选与
 ## 五、改完必须验证
 
 ```bash
-PYTHONPATH=src python3 -m unittest discover -s tests -t tests   # 107 项，含出厂数据加载校验
+PYTHONPATH=src python3 -m unittest discover -s tests -t tests   # 133 项，含出厂数据加载校验
 mcd-calories gaps                                              # 应无「新出现」
 mcd-calories                                                   # 看覆盖率是否提升
 ```
@@ -133,3 +133,21 @@ mcd-calories                                                   # 看覆盖率是
 - 新增别名 → 断言 `tier == "alias"` 且热量正确
 - 新增品类规则 → 断言命中与**不误伤**两侧（尤其是排除项）
 - 新增补充值 → 断言 `low < kcal < high`
+
+---
+
+## 六、装了 WorkBuddy 之后怎么维护
+
+装到 WorkBuddy 后，技能目录（`~/.workbuddy/skills/mcd-order-calories/`）里**有一份独立的 `data/`**。因此：
+
+- **只改一处会漂移**：数据改动请在**源仓库**里做，再执行 `bash install.sh` 同步到技能目录；
+  脚本用 `rsync -a --delete`，会清掉目标目录里多余的旧文件（幂等复装）。
+- **Token 不在副本之间同步**：复制时**排除 `.env`**（避免凭据扩散）；
+  只有显式传 `--token` 时才会在技能目录生成新的 `.env`（权限 `600`）。
+- **两套凭据入口**：WorkBuddy 界面连接器里的 Token 供**对话调用 MCP 工具**；
+  技能目录的 `.env` 供**命令行直接运行**。改了其中一个不影响另一个。
+- **验证副本**：`cd ~/.workbuddy/skills/mcd-order-calories && PYTHONPATH=src python3 -m mcd_order_calories.cli --list-tools`
+  会打印生效的 `.env` 路径与脱敏 Token，可用来确认副本读到了正确配置。
+
+> 其他 Agent 渠道当前是占位（`bash install.sh kiro` 会明确报「尚未适配」并退出码 `2`）。
+> 等某个渠道适配后，把本节标题与命令一并改成对应的技能目录即可。
