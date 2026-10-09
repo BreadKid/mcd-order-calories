@@ -106,7 +106,7 @@ mcd-calories explain "某商品名"          # 看判定理由、全部候选与
 ## 五、改完必须验证
 
 ```bash
-PYTHONPATH=src python3 -m unittest discover -s tests -t tests   # 95 项，含出厂数据加载校验
+PYTHONPATH=src python3 -m unittest discover -s tests -t tests   # 101 项，含出厂数据加载校验
 mcd-calories gaps                                              # 应无「新出现」
 mcd-calories                                                   # 看覆盖率是否提升
 ```
