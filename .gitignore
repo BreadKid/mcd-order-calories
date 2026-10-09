@@ -21,6 +21,10 @@ env/
 # Secrets — never commit a real token
 .env
 .env.*
+!.env.example
 *.token
 token.txt
 .mcd_token
+
+# macOS
+.DS_Store
