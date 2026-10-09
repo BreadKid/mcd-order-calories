@@ -58,7 +58,7 @@ class TestShippedDataLoads(unittest.TestCase):
                 self.assertTrue(sup.source, "缺少来源标注")
                 self.assertIsNotNone(sup.low)
                 self.assertIsNotNone(sup.high)
-                self.assertLess(sup.low, sup.high, "区间上下界写反了")
+                self.assertLessEqual(sup.low, sup.high, "区间上下界写反了")
                 self.assertGreaterEqual(sup.kcal, sup.low)
                 self.assertLessEqual(sup.kcal, sup.high)
 

@@ -238,7 +238,8 @@ class OrderCalories:
         for unit in self.units:
             if unit.match.supplement is not None:
                 sup = unit.match.supplement
-                lines.append(f"     ℹ️ 「{sup.name}」为推导估算值 {sup.range_text} kcal"
+                label = "外部给定值" if sup.is_provided else "推导估算值"
+                lines.append(f"     ℹ️ 「{sup.name}」为{label} {sup.range_text} kcal"
                              f"（{sup.confidence} 置信度，非营养表数据）")
                 lines.append(f"        推导：{sup.derivation}")
                 lines.append(f"        来源：{sup.source}")

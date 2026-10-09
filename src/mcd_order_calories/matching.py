@@ -243,7 +243,8 @@ class ProductMatcher:
         if supplement is not None:
             return MatchResult(
                 name, MatchTier.SUPPLEMENT, supplement.entry(),
-                reason=(f"命中补充热量表，估算 {supplement.range_text} kcal"
+                reason=(f"命中补充热量表（{supplement.basis_text}），"
+                        f"{supplement.range_text} kcal"
                         f"（{supplement.confidence} 置信度，非营养表数据）"),
                 supplement=supplement,
             )

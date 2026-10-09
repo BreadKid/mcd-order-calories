@@ -177,7 +177,7 @@ flowchart TB
 
 ### 4.5 兼容性
 
-仅依赖 Python 标准库（`json` / `urllib` / `socket` / `re` / `unicodedata` / `dataclasses`），Python 3.9+ 直接运行，无需安装 MCP SDK。测试用标准库 `unittest`，`clone` 下来零安装即可复现全部 101 项。
+仅依赖 Python 标准库（`json` / `urllib` / `socket` / `re` / `unicodedata` / `dataclasses`），Python 3.9+ 直接运行，无需安装 MCP SDK。测试用标准库 `unittest`，`clone` 下来零安装即可复现全部 107 项。
 
 ---
 
@@ -218,7 +218,7 @@ mcd-calories --detail                   # 3) 展开每单明细与推导
 mcd-calories explain 双层脆鸡堡           # 4) 单商品判定理由与候选
 mcd-calories gaps                       # 5) 未匹配商品（已知缺口 / 新出现）
 
-PYTHONPATH=src python3 -m unittest discover -s tests -t tests   # 6) 101 项测试
+PYTHONPATH=src python3 -m unittest discover -s tests -t tests   # 6) 107 项测试
 ```
 
 **本项目不产生任何写操作**，全部命令都是只读的。

@@ -15,7 +15,7 @@
 
 ![Deps](https://img.shields.io/badge/Dependencies-zero-27251F?style=for-the-badge)
 
-![Tests](https://img.shields.io/badge/Tests-101%20passed-2ea44f?style=for-the-badge)
+![Tests](https://img.shields.io/badge/Tests-107%20passed-2ea44f?style=for-the-badge)
 
 ![License](https://img.shields.io/badge/License-MIT-27251F?style=for-the-badge)
 
@@ -283,7 +283,7 @@ mcd-calories doctor           # 检查连通性与所需工具
 **零依赖运行**——用标准库 `unittest`，clone 下来不用装任何东西就能验证：
 
 ```bash
-PYTHONPATH=src python3 -m unittest discover -s tests -t tests    # 101 passed
+PYTHONPATH=src python3 -m unittest discover -s tests -t tests    # 107 passed
 ```
 
 测试锁死的都是**实测踩过的坑**，不是设想的边界：
@@ -302,7 +302,7 @@ PYTHONPATH=src python3 -m unittest discover -s tests -t tests    # 101 passed
 
 | 项                                | 状态                          |
 | -------------------------------- | --------------------------- |
-| 协议实现（握手 / MCP 调用 / 响应解析）         | ✅ 101 项测试全绿                  |
+| 协议实现（握手 / MCP 调用 / 响应解析）         | ✅ 107 项测试全绿                  |
 | 归一化与五级匹配                         | ✅ 端到端跑通                     |
 | 真实端点 `https://mcp.mcd.cn` 真实账号数据 | ✅ **10/10 单完整覆盖，45/45 项命中** |
 | 估算值（5 项）                         | ⚠️ 见上方区间与推导，**非官方数据**       |
@@ -333,7 +333,7 @@ PYTHONPATH=src python3 -m unittest discover -s tests -t tests    # 101 passed
 │   ├── orders.py              # 订单展开、覆盖率、缺口台账
 │   ├── cli.py                 # 命令行入口
 │   └── data/                  # 四张人工维护表
-├── tests/                     # 101 项测试（零依赖 unittest）
+├── tests/                     # 107 项测试（零依赖 unittest）
 ├── docs/
 │   └── data-maintenance.md    # 四张数据表的维护流程
 └── examples/

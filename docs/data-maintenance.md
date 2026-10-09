@@ -71,6 +71,21 @@ mcd-calories explain "某商品名"          # 看判定理由、全部候选与
 }
 ```
 
+### 两种来源性质：derived 与 provided
+
+`supplements.json` 区分两类值：
+
+| `basis` | 含义 | 要求 |
+|---|---|---|
+| `derived`（默认） | 由营养表成对条目**推导**得出 | 必须能给出拆解过程 |
+| `provided` | **外部给定**的点值，本项目无法独立验证 | 必须说明给定来源，并记录任何已发现的疑点 |
+
+`provided` 的区间通常写成 `[N, N]`（点值）。**这不代表误差为零**，只表示"按给定点值采用"——
+输出里会把二者明确区分（`推导估算值` vs `外部给定值`），避免读者以为它们同等可信。
+
+若对给定值做过核对并发现冲突（例如与价格密度不符），**即使仍按原值录入，也必须把冲突留在条目里**。
+留痕的价值在于：将来若发现该值有误，能立刻定位到当初的判断依据。
+
 ### 推荐做法：复用公共基准值
 
 `supplements.json` 顶部有 `_公共基准值`，记录由营养表**成对条目相减**得出的组件值：
@@ -106,7 +121,7 @@ mcd-calories explain "某商品名"          # 看判定理由、全部候选与
 ## 五、改完必须验证
 
 ```bash
-PYTHONPATH=src python3 -m unittest discover -s tests -t tests   # 101 项，含出厂数据加载校验
+PYTHONPATH=src python3 -m unittest discover -s tests -t tests   # 107 项，含出厂数据加载校验
 mcd-calories gaps                                              # 应无「新出现」
 mcd-calories                                                   # 看覆盖率是否提升
 ```

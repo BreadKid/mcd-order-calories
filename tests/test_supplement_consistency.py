@@ -58,14 +58,70 @@ class TestSingleDoubleRelationship(unittest.TestCase):
                         "单层鸡排堡与麦香鸡偏差过大，说明某一条推导有问题")
 
 
+class TestProvidedValues(unittest.TestCase):
+    """外部给定值与本项目推导值必须可区分。
+
+    外部给定值的区间可能**无法刻画真实误差**，输出里必须说清，
+    不能让读者以为它和推导值同等可信。
+    """
+
+    def test_cheese_stick_is_marked_as_provided(self) -> None:
+        sup = load_supplement_catalog().lookup("马苏里拉拉丝芝士条")
+        self.assertIsNotNone(sup)
+        assert sup is not None
+        self.assertTrue(sup.is_provided)
+        self.assertEqual(sup.basis, "provided")
+        self.assertEqual(sup.kcal, 1200)
+        self.assertIn("外部给定", sup.basis_text)
+
+    def test_provided_value_keeps_the_doubt_on_record(self) -> None:
+        """价格密度冲突必须留在条目里，不能因为按原值录入就删掉留痕。"""
+        sup = load_supplement_catalog().lookup("马苏里拉拉丝芝士条")
+        assert sup is not None
+        self.assertIn("未经本项目独立验证", sup.source)
+
+    def test_derived_entries_are_not_marked_provided(self) -> None:
+        for name in ["双层脆鸡堡", "Hold不住鸡排堡（椒盐风味）",
+                     "泰式炭烤风味猪猪堡", "东南亚风味椰香鸡扒堡", "世界波脆鸡排蛋堡"]:
+            with self.subTest(name=name):
+                sup = load_supplement_catalog().lookup(name)
+                assert sup is not None
+                self.assertFalse(sup.is_provided, f"{name} 应为本项目推导值")
+                self.assertIn("本项目推导", sup.basis_text)
+
+    def test_point_value_renders_without_a_fake_range(self) -> None:
+        """low == high 时不应渲染成 “1200（1200~1200）”。"""
+        sup = load_supplement_catalog().lookup("马苏里拉拉丝芝士条")
+        assert sup is not None
+        self.assertEqual(sup.range_text, "1200")
+
+    def test_out_of_range_value_is_rejected(self) -> None:
+        from mcd_order_calories.supplements import SupplementCatalog
+
+        with self.assertRaises(ValueError) as ctx:
+            SupplementCatalog.from_dict({"supplements": {"X": {
+                "kcal": 999, "range": [100, 200],
+                "derivation": "d", "source": "s"}}})
+        self.assertIn("不在区间内", str(ctx.exception))
+
+    def test_bad_basis_is_rejected(self) -> None:
+        from mcd_order_calories.supplements import SupplementCatalog
+
+        with self.assertRaises(ValueError) as ctx:
+            SupplementCatalog.from_dict({"supplements": {"X": {
+                "kcal": 150, "range": [100, 200], "basis": "胡编",
+                "derivation": "d", "source": "s"}}})
+        self.assertIn("basis", str(ctx.exception))
+
+
 class TestEntryHygiene(unittest.TestCase):
     """每条补充值必须自洽，且引用得到公共基准值。"""
 
     def test_all_entries_internally_consistent(self) -> None:
         for key, sup in load_supplement_catalog().entries.items():
             with self.subTest(name=sup.name):
-                self.assertLess(sup.low, sup.kcal)
-                self.assertLess(sup.kcal, sup.high)
+                self.assertLessEqual(sup.low, sup.kcal)
+                self.assertLessEqual(sup.kcal, sup.high)
                 self.assertIn(sup.confidence, ("high", "medium", "low"))
                 self.assertTrue(sup.derivation)
                 self.assertTrue(sup.source)

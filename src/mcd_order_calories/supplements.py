@@ -41,12 +41,26 @@ class Supplement:
     confidence: str = "medium"
     derivation: str = ""
     source: str = ""
+    basis: str = "derived"   # "derived"（本项目推导） | "provided"（外部给定的点值）
 
     @property
     def range_text(self) -> str:
-        if self.low is None or self.high is None:
+        if self.low is None or self.high is None or self.low == self.high:
             return f"{self.kcal:g}"
         return f"{self.kcal:g}（{self.low:g}~{self.high:g}）"
+
+    @property
+    def is_provided(self) -> bool:
+        """值由外部给定、本项目无法独立验证。
+
+        与 derived 的区别不只是来源——它意味着**区间可能无法刻画真实误差**，
+        输出里必须说清这一点，不能让读者以为它和推导值同等可信。
+        """
+        return self.basis == "provided"
+
+    @property
+    def basis_text(self) -> str:
+        return "外部给定值，未经本项目推导" if self.is_provided else "本项目推导"
 
     def entry(self) -> NutritionEntry:
         return NutritionEntry(
@@ -100,6 +114,15 @@ class SupplementCatalog:
                 low, high = float(bounds[0]), float(bounds[1])
             if low is None or high is None:
                 raise ValueError(f"补充条目 {name!r} 缺少误差区间（range）——只给点值会假装精确")
+            if low > high:
+                raise ValueError(f"补充条目 {name!r} 的区间上下界写反了：{low} > {high}")
+            if not (low <= float(raw["kcal"]) <= high):
+                raise ValueError(
+                    f"补充条目 {name!r} 的 kcal 不在区间内：{raw['kcal']} ∉ [{low}, {high}]"
+                )
+            basis = str(raw.get("basis") or "derived")
+            if basis not in ("derived", "provided"):
+                raise ValueError(f"补充条目 {name!r} 的 basis 只能是 derived 或 provided")
             entries[normalize(str(name))] = Supplement(
                 name=str(name),
                 kcal=float(raw["kcal"]),
@@ -108,5 +131,6 @@ class SupplementCatalog:
                 confidence=str(raw.get("confidence") or "medium"),
                 derivation=derivation,
                 source=source_text,
+                basis=basis,
             )
         return cls(entries, source=source)

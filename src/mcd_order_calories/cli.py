@@ -303,7 +303,10 @@ def _calories(args, results, matcher, nutrition, warnings) -> int:
         parts = []
         for status_class, group in excluded_groups.items():
             subtotal = round(sum(o.known_kcal for o in group), 1)
-            parts.append(f"{STATUS_LABELS.get(status_class, status_class)} {len(group)} 单（≥{subtotal:.0f} kcal）")
+            # 完全覆盖就不该带下界前缀——否则会把一个完整数值说成不完整
+            prefix = "" if all(o.is_complete for o in group) else "≥"
+            parts.append(f"{STATUS_LABELS.get(status_class, status_class)} "
+                         f"{len(group)} 单（{prefix}{subtotal:.0f} kcal）")
         print(f"未计入合计：{'、'.join(parts)}")
         print("    以上订单未纳入热量合计——待支付/已取消不算已摄入，状态未知则保守排除。")
     if category_units:
