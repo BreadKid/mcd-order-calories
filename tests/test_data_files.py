@@ -161,6 +161,195 @@ class TestCliArgumentHandling(unittest.TestCase):
                 args = parser.parse_args(inject_default_command(argv, self.COMMANDS))
                 self.assertEqual(args.command, "calories")
 
+    def test_list_tools_means_doctor_not_calories(self) -> None:
+        """`--list-tools` 是自检诉求，不能被补成 `calories` 去拉订单。"""
+        from mcd_order_calories.cli import build_parser, inject_default_command
+
+        argv = inject_default_command(["--list-tools"], self.COMMANDS)
+        self.assertEqual(argv, ["--list-tools", "doctor"])
+        args = build_parser().parse_args(argv)
+        self.assertTrue(args.list_tools)
+        self.assertEqual(args.command, "doctor")
+
+    def test_help_is_not_rewritten_into_subcommand_help(self) -> None:
+        """`--help` 必须显示总览帮助，而不是被补成 `calories --help`。"""
+        from mcd_order_calories.cli import inject_default_command
+
+        for argv in (["--help"], ["-h"], ["--token", "t", "--help"]):
+            with self.subTest(argv=argv):
+                self.assertEqual(inject_default_command(argv, self.COMMANDS), argv)
+
+    def test_global_options_accepted_after_subcommand(self) -> None:
+        """`doctor --json`、`calories --url u` 这类写法必须能用。
+
+        子命令里的全局选项默认值是 SUPPRESS，所以未显式传入时不会覆盖主 parser 的值。
+        """
+        from mcd_order_calories.cli import build_parser
+
+        parser = build_parser()
+        args = parser.parse_args(["--url", "https://a", "doctor", "--json"])
+        self.assertEqual(args.url, "https://a")
+        self.assertTrue(args.json)
+        self.assertEqual(args.command, "doctor")
+
+        args = parser.parse_args(["doctor", "--url", "https://b"])
+        self.assertEqual(args.url, "https://b")
+
+
+class TestEnvFileLoading(unittest.TestCase):
+    """多 Agent 安装后 Token 仍要能被读到，且不能覆盖用户已有的环境变量。"""
+
+    def test_parse_env_text_supports_expected_subset(self) -> None:
+        from mcd_order_calories.config import parse_env_text
+
+        values = parse_env_text(
+            "# 注释\n"
+            "\n"
+            "export MCD_MCP_TOKEN=abc123\n"
+            "MCD_MCP_URL=https://example.test\n"
+            'QUOTED="has space"\n'
+            "SINGLE='single'\n"
+            "TOKEN_WITH_HASH=tok#not-a-comment\n"
+            "TRAILING_COMMENT=value # 这里的 # 前有空格，也按值处理\n"
+            "EMPTY=\n"
+            "BAD LINE WITHOUT EQUALS\n"
+            "9INVALID=skipped\n"
+        )
+        self.assertEqual(values["MCD_MCP_TOKEN"], "abc123")
+        self.assertEqual(values["MCD_MCP_URL"], "https://example.test")
+        self.assertEqual(values["QUOTED"], "has space")
+        self.assertEqual(values["SINGLE"], "single")
+        self.assertEqual(values["TOKEN_WITH_HASH"], "tok#not-a-comment")
+        self.assertEqual(values["EMPTY"], "")
+        self.assertNotIn("9INVALID", values)
+        self.assertEqual(len(values), 7)
+
+    def test_candidate_env_files_order(self) -> None:
+        """显式 $MCD_ENV_FILE → 当前目录 .env → Skill 根目录 .env。"""
+        import os
+        import tempfile
+        from pathlib import Path
+
+        from mcd_order_calories.config import ENV_FILE_VAR, candidate_env_files, install_root
+
+        with tempfile.TemporaryDirectory() as tmp:
+            explicit = Path(tmp) / "custom.env"
+            saved = os.environ.get(ENV_FILE_VAR)
+            os.environ[ENV_FILE_VAR] = str(explicit)
+            try:
+                candidates = candidate_env_files(Path(tmp))
+            finally:
+                if saved is None:
+                    os.environ.pop(ENV_FILE_VAR, None)
+                else:
+                    os.environ[ENV_FILE_VAR] = saved
+
+            self.assertEqual(candidates[0], explicit)
+            self.assertEqual(candidates[1], Path(tmp) / ".env")
+            root = install_root()
+            if root is not None:
+                self.assertIn(root / ".env", candidates)
+            self.assertEqual(len(candidates), len(set(candidates)), "候选路径不应重复")
+
+    def test_load_env_does_not_override_existing_values(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        from mcd_order_calories.config import ENV_TOKEN, load_env
+
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / ".env").write_text(
+                f"{ENV_TOKEN}=from-file\nOTHER_KEY=from-file\n", encoding="utf-8")
+            environ = {ENV_TOKEN: "from-shell"}
+            applied = load_env(cwd=Path(tmp), environ=environ)
+
+            self.assertTrue(applied, "应至少应用了当前目录的 .env")
+            self.assertEqual(environ[ENV_TOKEN], "from-shell", "已有环境变量不能被文件覆盖")
+            self.assertEqual(environ["OTHER_KEY"], "from-file", "缺失的键应从文件补齐")
+
+    def test_load_env_override_when_requested(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        from mcd_order_calories.config import ENV_TOKEN, load_env
+
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / ".env").write_text(f"{ENV_TOKEN}=from-file\n", encoding="utf-8")
+            environ = {ENV_TOKEN: "from-shell"}
+            load_env(cwd=Path(tmp), override=True, environ=environ)
+            self.assertEqual(environ[ENV_TOKEN], "from-file")
+
+    def test_missing_env_file_is_not_an_error(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        from mcd_order_calories.config import load_env, load_env_file
+
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(load_env_file(Path(tmp) / "nope.env"), {})
+            self.assertEqual(load_env(cwd=Path(tmp), environ={}), [])
+
+    def test_mask_secret_never_reveals_full_token(self) -> None:
+        from mcd_order_calories.config import mask_secret
+
+        token = "abcdefghijklmnop"
+        masked = mask_secret(token)
+        self.assertNotIn(token, masked)
+        self.assertIn("abcd", masked)
+        self.assertIn("mnop", masked)
+        self.assertEqual(mask_secret(None), "(未设置)")
+        self.assertEqual(mask_secret("short"), "*****")
+
+
+class TestListToolsCommand(unittest.TestCase):
+    """`--list-tools` / `doctor` 的 JSON 输出是各 Agent 的自检依据，必须字段稳定。"""
+
+    def _run_with_fake_client(self, argv, tool_names):
+        import io
+        import unittest.mock as mock
+
+        from mcd_order_calories import cli
+
+        fake = mock.MagicMock()
+        fake.__enter__.return_value = fake
+        fake.__exit__.return_value = False
+        fake.server_info = {"serverInfo": {"name": "mcd-mcp", "version": "1.0"}}
+        fake.tool_names.return_value = tool_names
+
+        out = io.StringIO()
+        with mock.patch.object(cli, "McpHttpClient", return_value=fake), \
+                mock.patch("sys.stdout", out):
+            code = cli.run(argv)
+        return code, out.getvalue()
+
+    def test_doctor_json_reports_ready_when_required_tools_present(self) -> None:
+        import json as jsonlib
+
+        secret = "secret-token-value"
+        code, output = self._run_with_fake_client(
+            ["--list-tools", "--json", "--token", secret],
+            ["order-list", "list-nutrition-foods", "now-time-info"],
+        )
+        self.assertEqual(code, 0, output)
+        payload = jsonlib.loads(output)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["required_missing"], [])
+        self.assertEqual(payload["tools"], 3)
+        self.assertIn("now-time-info", payload["tool_names"])
+        self.assertNotIn(secret, output, "JSON 输出里的 Token 必须脱敏")
+        self.assertIn("secr", payload["token"])
+
+    def test_doctor_json_flags_missing_required_tool(self) -> None:
+        import json as jsonlib
+
+        code, output = self._run_with_fake_client(
+            ["doctor", "--json", "--token", "tok"], ["order-list"],
+        )
+        self.assertEqual(code, 1, "缺少必需工具时退出码应为 1")
+        payload = jsonlib.loads(output)
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["required_missing"], ["list-nutrition-foods"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -7,9 +7,17 @@ import json
 import os
 import sys
 from importlib import resources
+from pathlib import Path
 from typing import Any, Sequence
 
 from .categories import CategoryCatalog
+from .config import (
+    DEFAULT_URL,
+    ENV_TOKEN,
+    ENV_URL,
+    load_env,
+    mask_secret,
+)
 from .matching import AliasTable, ProductMatcher
 from .supplements import SupplementCatalog
 from .mcp_client import McpError, McpHttpClient
@@ -17,11 +25,21 @@ from .nutrition import parse_nutrition
 from .orders import STATUS_LABELS, GapLedger, OrderStatusPolicy, compute_orders
 from .payload import PayloadError, extract_data
 
-DEFAULT_URL = "https://mcp.mcd.cn"
-ENV_URL = "MCD_MCP_URL"
-ENV_TOKEN = "MCD_MCP_TOKEN"
-
 REQUIRED_TOOLS = ("order-list", "list-nutrition-foods")
+
+TOKEN_HELP = """\
+缺少 MCP Token：无法读取麦当劳订单。
+
+配置方式（任选其一）：
+  1. 复制并填写 .env（推荐）：
+       cp .env.example .env      # 然后把 MCD_MCP_TOKEN 换成你的真实 Token
+  2. 直接设置环境变量：
+       export MCD_MCP_TOKEN="你的 Token"
+  3. 命令行传入：
+       mcd-calories --token "你的 Token"
+
+Token 申请：https://github.com/M-China/mcd-mcp-server
+说明：Token 只从环境变量 / .env / 命令行读取，本项目不会写入或上传任何凭据。"""
 
 
 def _data_text(name: str) -> str:
@@ -54,31 +72,53 @@ def load_supplement_catalog() -> SupplementCatalog:
                                        source="supplements.json")
 
 
+def _add_global_options(parser: argparse.ArgumentParser,
+                        *, suppress: bool = False) -> None:
+    """注册全局选项。
+
+    ``suppress=True`` 用于子命令副本：这样 ``--url`` 写在子命令后面也能生效，
+    且未显式传入时（``SUPPRESS``）不会把主 parser 已解析出的值覆盖成默认值。
+    """
+    default = argparse.SUPPRESS if suppress else None
+
+    def value_default(fallback):
+        return argparse.SUPPRESS if suppress else fallback
+
+    parser.add_argument("--url", default=value_default(os.environ.get(ENV_URL, DEFAULT_URL)),
+                        help=f"MCP 服务地址（默认 ${ENV_URL} 或 {DEFAULT_URL}）")
+    parser.add_argument("--token", default=value_default(os.environ.get(ENV_TOKEN)),
+                        help=f"麦当劳 MCP Token（默认读取 ${ENV_TOKEN}）")
+    parser.add_argument("--timeout", type=float, default=value_default(60.0))
+    parser.add_argument("--json", action="store_true", default=default,
+                        help="以 JSON 输出")
+    parser.add_argument("--list-tools", dest="list_tools", action="store_true",
+                        default=default,
+                        help="连接 MCP 并列出可用工具（等价于 doctor，便于各 Agent 自检）")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="mcd-calories",
         description="订单卡路里一览 —— 把麦当劳历史订单折算成卡路里，并如实给出数据覆盖率",
     )
-    parser.add_argument("--url", default=os.environ.get(ENV_URL, DEFAULT_URL),
-                        help=f"MCP 服务地址（默认 ${ENV_URL} 或 {DEFAULT_URL}）")
-    parser.add_argument("--token", default=os.environ.get(ENV_TOKEN),
-                        help=f"麦当劳 MCP Token（默认读取 ${ENV_TOKEN}）")
-    parser.add_argument("--timeout", type=float, default=60.0)
-    parser.add_argument("--json", action="store_true", help="以 JSON 输出")
+    _add_global_options(parser)
 
     # 不带子命令时默认执行 calories——`mcd-calories` 直接给结果，少敲一次
     sub = parser.add_subparsers(dest="command")
 
-    sub.add_parser("doctor", help="检查连通性与所需工具")
+    subcommands = (
+        sub.add_parser("doctor", help="检查连通性与所需工具（同 --list-tools）"),
+        sub.add_parser("calories", help="输出历史订单的卡路里一览"),
+        sub.add_parser("explain", help="解析单个商品名，展示判定理由与全部候选"),
+        sub.add_parser("gaps", help="列出未匹配商品，区分「已知缺口」与「新出现」"),
+    )
+    for command in subcommands:
+        _add_global_options(command, suppress=True)
 
-    orders = sub.add_parser("calories", help="输出历史订单的卡路里一览")
+    orders = subcommands[1]
     orders.add_argument("--detail", action="store_true", help="展开每单的商品明细")
     orders.add_argument("--limit", type=int, default=0, help="只显示最近 N 单")
-
-    explain = sub.add_parser("explain", help="解析单个商品名，展示判定理由与全部候选")
-    explain.add_argument("name", help="商品名，例如「可口可乐中杯」")
-
-    sub.add_parser("gaps", help="列出未匹配商品，区分「已知缺口」与「新出现」")
+    subcommands[2].add_argument("name", help="商品名，例如「可口可乐中杯」")
 
     return parser
 
@@ -88,22 +128,29 @@ DEFAULT_COMMAND = "calories"
 # 全局选项（定义在主 parser 上）。argparse 要求它们出现在子命令**之前**，
 # 所以补默认子命令时不能简单地把命令插到最前面。
 _GLOBAL_OPTIONS_WITH_VALUE = ("--url", "--token", "--timeout")
-_GLOBAL_OPTIONS_BOOL = ("--json",)
+_GLOBAL_OPTIONS_BOOL = ("--json", "--list-tools")
 
 
 def inject_default_command(argv: Sequence[str], commands: Sequence[str],
                            default: str = DEFAULT_COMMAND) -> list[str]:
     """未指定子命令时补上默认命令，且保持全局选项在子命令之前。
 
-    ``[]``                  → ``["calories"]``
-    ``["--json"]``          → ``["--json", "calories"]``
-    ``["--detail"]``        → ``["calories", "--detail"]``
-    ``["--url", "u"]``      → ``["--url", "u", "calories"]``
-    ``["doctor"]``          → 原样返回
+    ``[]``                     → ``["calories"]``
+    ``["--json"]``             → ``["--json", "calories"]``
+    ``["--detail"]``           → ``["calories", "--detail"]``
+    ``["--url", "u"]``         → ``["--url", "u", "calories"]``
+    ``["--list-tools"]``       → ``["--list-tools", "doctor"]``
+    ``["doctor"]``             → 原样返回
     """
     argv = list(argv)
     if any(token in commands for token in argv):
         return argv
+    # `-h/--help` 是「看这个程序怎么用」，不该被补成 `calories --help`
+    if "-h" in argv or "--help" in argv:
+        return argv
+    # `--list-tools` 本身就是一个完整诉求（自检），不该再补默认命令去拉订单
+    if "--list-tools" in argv:
+        return argv + ["doctor"]
     head: list[str] = []
     index = 0
     while index < len(argv):
@@ -128,19 +175,23 @@ def _subcommands(parser: argparse.ArgumentParser) -> list[str]:
 
 
 def run(argv: Sequence[str] | None = None) -> int:
+    # 先加载 .env 再解析参数：这样 `--token` 的默认值也能吃到文件里的配置，
+    # 装到各种 Agent 工具里「clone 下来就能跑」，不用手工 export。
+    env_files = load_env()
     parser = build_parser()
     raw = list(sys.argv[1:] if argv is None else argv)
     args = parser.parse_args(inject_default_command(raw, _subcommands(parser)))
+    if args.list_tools:
+        args.command = "doctor"
     if not args.token:
-        print(f"缺少 MCP Token：请设置环境变量 {ENV_TOKEN}，或使用 --token 传入。\n"
-              f"申请方式见 https://github.com/M-China/mcd-mcp-server", file=sys.stderr)
+        print(TOKEN_HELP, file=sys.stderr)
         return 2
     try:
         with McpHttpClient(args.url, token=args.token, timeout=args.timeout) as client:
             available = set(client.tool_names())
             missing = [t for t in REQUIRED_TOOLS if t not in available]
             if args.command == "doctor":
-                return _doctor(args, client, available, missing)
+                return _doctor(args, client, available, missing, env_files)
             if missing:
                 print(f"错误：服务端缺少必需工具 {missing}", file=sys.stderr)
                 return 1
@@ -165,16 +216,27 @@ def run(argv: Sequence[str] | None = None) -> int:
     return 0
 
 
-def _doctor(args, client: McpHttpClient, available: set[str], missing: list[str]) -> int:
+def _doctor(args, client: McpHttpClient, available: set[str], missing: list[str],
+            env_files: Sequence[Path] = ()) -> int:
     info = client.server_info
+    tools = sorted(available)
     if args.json:
-        print(json.dumps({"server": info, "tools": len(available),
+        print(json.dumps({"server": info, "url": args.url, "tools": len(available),
+                          "tool_names": tools,
+                          "token": mask_secret(args.token),
+                          "env_files": [str(p) for p in env_files],
                           "required_missing": missing, "ok": not missing},
                          ensure_ascii=False, indent=2))
     else:
         print(f"服务地址：{args.url}")
         print(f"服务端：{info}")
+        print(f"Token：{mask_secret(args.token)}")
+        if env_files:
+            print(f"配置文件：{'、'.join(str(p) for p in env_files)}")
+        else:
+            print("配置文件：未使用 .env（Token 来自环境变量或命令行）")
         print(f"工具总数：{len(available)}")
+        print(f"  可用：{'、'.join(tools) if tools else '（无）'}")
         print(f"所需工具：{'全部就绪' if not missing else '缺少 ' + ', '.join(missing)}")
         print(f"结论：{'可用于折算' if not missing else '不可用'}")
     return 0 if not missing else 1
