@@ -1,4 +1,4 @@
-# 使用 WorkBuddy 开发的对话上下文 · workbuddy.md
+# 使用 WorkBuddy 开发的对话上下文
 
 本文档记录本项目借助腾讯 WorkBuddy 完成开发的上下文，用于核验 WorkBuddy 联动活动奖励条件。
 
