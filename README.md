@@ -2,6 +2,10 @@
 
 # 🍔 订单卡路里一览 · mcd-order-calories
 
+<!-- yarkr:badges:start -->
+[![Indexed on Yarkr](https://api.yarkr.com/functions/v1/api/api/v1/badges/repos/BreadKid/mcd-order-calories/version.svg)](https://yarkr.com/arks/breadkid/mcd-order-calories)
+<!-- yarkr:badges:end -->
+
 ### 把麦当劳历史订单，折算成看得懂的卡路里
 
 **说一句「麦麦，今天吃了多少卡」或「算算我吃过多少卡」，它拉出你的历史订单、展开套餐成分、对齐营养表，逐单给出热量——并且如实告诉你哪几项没算出来。**
@@ -380,3 +384,35 @@ PYTHONPATH=src python3 -m unittest discover -s tests -t tests    # 107 passed
 ## 📄 License
 
 [MIT](./LICENSE)
+
+<!-- yarkr:install:start -->
+## Install with Yarkr
+
+This repo is indexed on [Yarkr](https://yarkr.com/arks/breadkid/mcd-order-calories) as the ark [breadkid/mcd-order-calories](https://yarkr.com/arks/breadkid/mcd-order-calories), so its skills install into Claude Code, Codex, Cursor and other agent harnesses with one command.
+
+### CLI
+
+Install the whole ark, which Yarkr keeps equal to this repo:
+
+```bash
+npx yarkr-cli sync breadkid/mcd-order-calories
+```
+
+Or add individual skills:
+
+```bash
+npx yarkr-cli add skill:breadkid/mcd-order-calories/mcd-order-calories
+```
+
+No Node.js? `curl -fsSL https://yarkr.com/install.sh | sh` (macOS, Linux) or `irm https://yarkr.com/install.ps1 | iex` (Windows PowerShell) installs `yarkr` as a standalone binary; then type `yarkr` in place of `npx yarkr-cli`.
+
+### MCP
+
+Connect your agent to the ark over MCP:
+
+```bash
+npx yarkr-cli mcp add breadkid/mcd-order-calories
+```
+
+Or point any MCP client at `https://api.yarkr.com/functions/v1/api/mcp/o/breadkid/mcd-order-calories`.
+<!-- yarkr:install:end -->
